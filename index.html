@@ -5,81 +5,94 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin - ច្បាប់ចេញក្រៅ</title>
     
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Google Font: Khmer -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- Font Awesome (for Icons) -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" xintegrity="sha512-9usAa10IRO0HhonpyAIVpjrylPvoDwiPUiKdWk5t3PyolY1cOd4DSE0Ga+ri4AuTroPR5aQvXU9xC6qOPnzFeg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 
     <style>
-        /* ប្រើ Font ខ្មែរ សម្រាប់កម្មវិធីទាំងមូល */
         body {
             font-family: 'Kantumruy Pro', sans-serif;
             -webkit-tap-highlight-color: transparent;
         }
-
-        /* Spinner សម្រាប់ Loading */
         .spinner {
             border: 4px solid rgba(0, 0, 0, 0.1);
             width: 36px;
             height: 36px;
             border-radius: 50%;
-            border-left-color: #16a34a; /* ពណ៌បៃតង (សម្រាប់ច្បាប់ចេញក្រៅ) */
+            border-left-color: #16a34a;
             animation: spin 1s ease infinite;
         }
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        
+        /* Style សម្រាប់ Tab ដែល Active */
+        .tab-btn.active {
+            border-bottom-color: #16a34a; /* ពណ៌បៃតង */
+            color: #16a34a;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
 
-    <!-- រចនាសម្ព័ន្ធកម្មវិធី Mobile App -->
     <div class="max-w-md mx-auto min-h-screen bg-white shadow-lg">
 
-        <!-- Header (ចំណងជើង និង ប៊ូតុង Filter) -->
-        <header class="bg-white sticky top-0 z-10 shadow-sm border-b border-gray-200 p-4 flex justify-between items-center">
-            <h1 class="text-xl font-bold text-gray-800">
-                <i class="fa-solid fa-person-walking-arrow-right mr-2 text-green-600"></i>
-                ច្បាប់ចេញក្រៅ (Approved)
-            </h1>
-            <button id="open-filter-btn" class="p-2 text-gray-600 hover:text-green-600">
-                <i class="fa-solid fa-filter fa-lg"></i>
-            </button>
+        <header class="bg-white sticky top-0 z-10 shadow-sm border-b border-gray-200">
+            <div class="p-4 flex justify-between items-center">
+                <h1 class="text-xl font-bold text-gray-800">
+                    <i class="fa-solid fa-person-walking-arrow-right mr-2 text-green-600"></i>
+                    ច្បាប់ចេញក្រៅ
+                </h1>
+                <button id="open-filter-btn" class="p-2 text-gray-600 hover:text-green-600">
+                    <i class="fa-solid fa-filter fa-lg"></i>
+                </button>
+            </div>
+            
+            <nav class="flex border-b border-gray-200">
+                <button id="tab-out-now" class="tab-btn active flex-1 py-3 px-4 text-center text-gray-600 border-b-2 border-transparent hover:bg-gray-50">
+                    🚶 កំពុងនៅក្រៅ
+                </button>
+                <button id="tab-returned" class="tab-btn flex-1 py-3 px-4 text-center text-gray-600 border-b-2 border-transparent hover:bg-gray-50">
+                    ✔️ បានចូលមកវិញ
+                </button>
+            </nav>
         </header>
 
-        <!-- Main Content (កន្លែងបង្ហាញ Card) -->
         <main id="main-content" class="p-4 bg-gray-50 min-h-screen">
             
-            <!-- កន្លែង Loading -->
             <div id="loading-indicator" class="text-center py-10">
                 <div class="spinner mx-auto mb-4"></div>
                 <p class="text-gray-600 font-medium">កំពុងទាញយកទិន្នន័យ...</p>
             </div>
 
-            <!-- Container សម្រាប់ Card ច្បាប់ចេញក្រៅ -->
-            <div id="out-list-container"></div>
-            
-            <!-- បង្ហាញនៅពេលមិនមានទិន្នន័យ -->
-            <div id="out-placeholder" class="text-center text-gray-500 mt-10 hidden">
-                <i class="fa-solid fa-folder-open fa-3x text-gray-400 mb-4"></i>
-                <p class="text-lg">មិនមានទិន្នន័យច្បាប់ចេញក្រៅ (បានយល់ព្រម) សម្រាប់ខែនេះទេ។</p>
-            </div>
+            <section id="out-now-section">
+                <div id="out-now-list"></div>
+                <div id="out-now-placeholder" class="text-center text-gray-500 mt-10 hidden">
+                    <i class="fa-solid fa-folder-open fa-3x text-gray-400 mb-4"></i>
+                    <p class="text-lg">មិនមានទិន្នន័យអ្នក "កំពុងនៅក្រៅ" សម្រាប់ខែនេះទេ។</p>
+                </div>
+            </section>
+
+            <section id="returned-section" class="hidden">
+                <div id="returned-list"></div>
+                <div id="returned-placeholder" class="text-center text-gray-500 mt-10 hidden">
+                    <i class="fa-solid fa-folder-open fa-3x text-gray-400 mb-4"></i>
+                    <p class="text-lg">មិនមានទិន្នន័យអ្នក "បានចូលមកវិញ" សម្រាប់ខែនេះទេ។</p>
+                </div>
+            </section>
 
         </main>
     </div>
 
-    <!-- Filter Modal (លាក់ទុកជាមុន) -->
     <div id="filter-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 hidden p-4">
         <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
             <h3 class="text-xl font-bold mb-6 text-center">ត្រងទិន្នន័យ</h3>
-            
             <div class="space-y-4">
                 <div>
                     <label for="filter-month" class="block text-sm font-medium text-gray-700 mb-1">ជ្រើសរើសខែ</label>
@@ -104,11 +117,9 @@
                         <option value="2024">2024</option>
                         <option value="2025">2025</option>
                         <option value="2026">2026</option>
-                        <!-- អ្នកអាចបន្ថែមឆ្នាំផ្សេងទៀតតាមតម្រូវការ -->
                     </select>
                 </div>
             </div>
-
             <div class="flex justify-end space-x-3 mt-6">
                 <button id="cancel-filter-btn" type="button" class="bg-gray-200 text-gray-800 py-2 px-5 rounded-lg font-semibold hover:bg-gray-300">បោះបង់</button>
                 <button id="apply-filter-btn" type="button" class="bg-green-600 text-white py-2 px-5 rounded-lg font-semibold shadow-md hover:bg-green-700">អនុវត្ត</button>
@@ -116,7 +127,6 @@
         </div>
     </div>
 
-    <!-- តភ្ជាប់ទៅ File JavaScript -->
     <script type="module" src="admin3_out_app.js"></script>
 
 </body>
