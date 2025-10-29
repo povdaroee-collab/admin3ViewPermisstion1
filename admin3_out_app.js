@@ -6,8 +6,7 @@ import { getFirestore, collection, query, where, onSnapshot, Timestamp, setLogLe
 // Enable Firestore debug logging
 setLogLevel('debug');
 
-// --- ការកំណត់រចនាសម្ព័ន្ធ Firebase (ដូចគ្នានឹងកម្មវិធី User) ---
-// (សូម​ប្រាកដ​ថា​ព័ត៌មាន​នេះ​ត្រឹមត្រូវ)
+// --- ការកំណត់រចនាសម្ព័ន្ធ Firebase ---
 const firebaseConfig = { 
     apiKey: "AIzaSyDjr_Ha2RxOWEumjEeSdluIW3JmyM76mVk", 
     authDomain: "dipermisstion.firebaseapp.com", 
@@ -18,18 +17,24 @@ const firebaseConfig = {
     measurementId: "G-KDPHXZ7H4B" 
 };
 
-// --- ផ្លូវ (Path) ទៅកាន់ Collection "ច្បាប់ចេញក្រៅ" ---
+// --- ផ្លូវ (Path) ទៅកាន់ Collection ---
 let outRequestsCollectionPath;
 
 // --- Global Variables ---
 let db, auth;
-let outListContainer, outPlaceholder, loadingIndicator;
+let loadingIndicator;
 let openFilterBtn, filterModal, filterMonth, filterYear, applyFilterBtn, cancelFilterBtn;
 
-let currentFilterMonth, currentFilterYear;
-let outUnsubscribe = null; // Listener សម្រាប់តែច្បាប់ចេញក្រៅ
+// (ថ្មី) References សម្រាប់ Tabs និង Sections
+let tabOutNow, tabReturned;
+let outNowSection, outNowList, outNowPlaceholder;
+let returnedSection, returnedList, returnedPlaceholder;
 
-// --- Date Helper Functions ---
+let currentFilterMonth, currentFilterYear;
+let requestsUnsubscribe = null; // Listener សម្រាប់ទិន្នន័យ
+let currentView = 'out_now'; // ផ្ទាំងដែលកំពុង Active
+
+// --- Date Helper Functions (ដូចដើម) ---
 function formatFirestoreTimestamp(timestamp, format = 'HH:mm dd/MM/yyyy') {
     let date;
     if (!timestamp) return "";
@@ -56,8 +61,6 @@ function formatFirestoreTimestamp(timestamp, format = 'HH:mm dd/MM/yyyy') {
 document.addEventListener('DOMContentLoaded', async () => {
 
     // --- កំណត់ Element References ---
-    outListContainer = document.getElementById('out-list-container');
-    outPlaceholder = document.getElementById('out-placeholder');
     loadingIndicator = document.getElementById('loading-indicator');
     openFilterBtn = document.getElementById('open-filter-btn');
     filterModal = document.getElementById('filter-modal');
@@ -66,14 +69,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     applyFilterBtn = document.getElementById('apply-filter-btn');
     cancelFilterBtn = document.getElementById('cancel-filter-btn');
 
-    // --- កំណត់ Filter ដំបូង (ខែ និង ឆ្នាំ បច្ចុប្បន្ន) ---
+    // (ថ្មី) កំណត់ References សម្រាប់ Tabs និង Sections
+    tabOutNow = document.getElementById('tab-out-now');
+    tabReturned = document.getElementById('tab-returned');
+    outNowSection = document.getElementById('out-now-section');
+    outNowList = document.getElementById('out-now-list');
+    outNowPlaceholder = document.getElementById('out-now-placeholder');
+    returnedSection = document.getElementById('returned-section');
+    returnedList = document.getElementById('returned-list');
+    returnedPlaceholder = document.getElementById('returned-placeholder');
+
+    // --- កំណត់ Filter ដំបូង (ដូចដើម) ---
     const now = new Date();
-    currentFilterMonth = now.getMonth(); // 0-11
+    currentFilterMonth = now.getMonth();
     currentFilterYear = now.getFullYear();
-    
-    // Update <select> ឲ្យ​បង្ហាញ​តម្លៃ​បច្ចុប្បន្ន
     filterMonth.value = currentFilterMonth;
-    // កំណត់ឆ្នាំបច្ចុប្បន្ន (ប្រសិនបើឆ្នាំបច្ចុប្បន្នមិនមានក្នុង list សូមបន្ថែម)
+    
     let yearExists = false;
     for (let i = 0; i < filterYear.options.length; i++) {
         if (filterYear.options[i].value == currentFilterYear) {
@@ -85,17 +96,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         const option = document.createElement('option');
         option.value = currentFilterYear;
         option.text = currentFilterYear;
-        filterYear.add(option, filterYear.options[0]); // បន្ថែមនៅខាងដើម
+        filterYear.add(option, filterYear.options[0]);
     }
     filterYear.value = currentFilterYear;
-
 
     // --- កំណត់ Event Listeners ---
     openFilterBtn.addEventListener('click', openFilterModal);
     cancelFilterBtn.addEventListener('click', closeFilterModal);
     applyFilterBtn.addEventListener('click', applyFilter);
+    
+    // (ថ្មី) Event Listeners សម្រាប់ Tabs
+    tabOutNow.addEventListener('click', () => switchView('out_now'));
+    tabReturned.addEventListener('click', () => switchView('returned'));
 
-    // --- Firebase Initialization & Auth ---
+    // --- Firebase Initialization & Auth (ដូចដើម) ---
     try {
         if (!firebaseConfig.projectId) throw new Error("projectId not provided in firebase.initializeApp.");
         
@@ -103,9 +117,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         db = getFirestore(app);
         auth = getAuth(app);
         
-        // កំណត់ Path ដោយប្រើ Global Variable `__app_id` (ប្រសិនបើមាន)
         const canvasAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        // ប្រើតែ Path សម្រាប់ "ច្បាប់ចេញក្រៅ"
         outRequestsCollectionPath = `/artifacts/${canvasAppId}/public/data/out_requests`;
         
         console.log("Admin App (Out Only): Using Firestore Path:", outRequestsCollectionPath);
@@ -113,7 +125,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 console.log("Admin App (Out Only): Firebase Auth state changed. User UID:", user.uid);
-                // ចាប់ផ្តើមទាញទិន្នន័យដំបូង
                 fetchFilteredData();
             } else {
                 console.log("Admin App (Out Only): No user signed in. Attempting anonymous sign-in...");
@@ -123,7 +134,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
-        // ព្យាយាម Sign In ជា Anonymous នៅពេលបើកកម្មវិធី
         await signInAnonymously(auth);
 
     } catch (e) {
@@ -132,6 +142,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+// --- (ថ្មី) មុខងារ​ប្តូរ Tab ---
+function switchView(view) {
+    currentView = view;
+    if (view === 'out_now') {
+        // បង្ហាញ Section កំពុងនៅក្រៅ
+        outNowSection.classList.remove('hidden');
+        returnedSection.classList.add('hidden');
+        
+        // កំណត់ Style ឲ្យ Tab
+        tabOutNow.classList.add('active');
+        tabReturned.classList.remove('active');
+    } else {
+        // បង្ហាញ Section បានចូលមកវិញ
+        outNowSection.classList.add('hidden');
+        returnedSection.classList.remove('hidden');
+        
+        // កំណត់ Style ឲ្យ Tab
+        tabOutNow.classList.remove('active');
+        tabReturned.classList.add('active');
+    }
+}
 
 // --- មុខងារ​ទាញ​ទិន្នន័យ​តាម Filter ---
 function fetchFilteredData() {
@@ -139,13 +170,14 @@ function fetchFilteredData() {
     
     // បង្ហាញ Loading
     loadingIndicator.classList.remove('hidden');
-    outPlaceholder.classList.add('hidden');
-    outListContainer.innerHTML = '';
+    outNowPlaceholder.classList.add('hidden');
+    returnedPlaceholder.classList.add('hidden');
+    outNowList.innerHTML = '';
+    returnedList.innerHTML = '';
 
     // បញ្ឈប់ Listener ចាស់ (ប្រសិនបើមាន)
-    if (outUnsubscribe) outUnsubscribe();
+    if (requestsUnsubscribe) requestsUnsubscribe();
 
-    // គណនា​ថ្ងៃ​ចាប់ផ្ដើម និង​ថ្ងៃ​បញ្ចប់​នៃ​ខែ​ដែល​បាន​ជ្រើសរើស
     try {
         const startDate = new Date(currentFilterYear, currentFilterMonth, 1);
         const endDate = new Date(currentFilterYear, currentFilterMonth + 1, 1);
@@ -153,9 +185,7 @@ function fetchFilteredData() {
         const startTimestamp = Timestamp.fromDate(startDate);
         const endTimestamp = Timestamp.fromDate(endDate);
 
-        // --- បង្កើត Query សម្រាប់តែ ច្បាប់ចេញក្រៅ ---
-        // 1. ត្រូវតែ "approved"
-        // 2. ត្រូវតែ​នៅ​ក្នុង​ចន្លោះ​ពេល​ដែល​បាន​ជ្រើសរើស (ផ្អែក​លើ requestedAt)
+        // Query នេះគឺដូចដើម (ទាញយកទាំងអស់ដែល 'approved' ក្នុងខែនោះ)
         const outQuery = query(
             collection(db, outRequestsCollectionPath),
             where("status", "==", "approved"),
@@ -163,14 +193,20 @@ function fetchFilteredData() {
             where("requestedAt", "<", endTimestamp)
         );
 
-        outUnsubscribe = onSnapshot(outQuery, (snapshot) => {
-            console.log(`Received OUT snapshot. Size: ${snapshot.size}`);
-            renderHistoryList(snapshot, outListContainer, outPlaceholder); // ហៅ Function សម្រាប់បង្ហាញ
+        requestsUnsubscribe = onSnapshot(outQuery, (snapshot) => {
+            console.log(`Received snapshot. Size: ${snapshot.size}`);
+            
+            // (ថ្មី) ហៅ Function ថ្មី ដើម្បីបែងចែកទិន្នន័យ
+            processAndRenderData(snapshot); 
+            
             loadingIndicator.classList.add('hidden'); // លាក់ Loading
         }, (error) => {
-            console.error("Error listening to OUT history:", error);
-            outPlaceholder.innerHTML = `<p class="text-red-500">Error: មិនអាចទាញយកប្រវត្តិបានទេ ${error.message}</p>`;
-            outPlaceholder.classList.remove('hidden');
+            console.error("Error listening to history:", error);
+            // បង្ហាញ Error ទាំងពីរ
+            outNowPlaceholder.innerHTML = `<p class="text-red-500">Error: ${error.message}</p>`;
+            outNowPlaceholder.classList.remove('hidden');
+            returnedPlaceholder.innerHTML = `<p class="text-red-500">Error: ${error.message}</p>`;
+            returnedPlaceholder.classList.remove('hidden');
             loadingIndicator.classList.add('hidden');
         });
 
@@ -180,21 +216,39 @@ function fetchFilteredData() {
     }
 }
 
-// --- មុខងារ​បង្ហាញ Card ក្នុង​បញ្ជី ---
-// (Function នេះ​អាច​ប្រើ​ដូច​មុន ប៉ុន្តែ​យើង​ដឹង​ថា type គឺ 'out' ជានិច្ច)
-function renderHistoryList(snapshot, container, placeholder) {
+// --- (ថ្មី) មុខងារ​បែងចែកទិន្នន័យ និង​បង្ហាញ​ក្នុង List នីមួយៗ ---
+function processAndRenderData(snapshot) {
+    const allRequests = [];
+    snapshot.forEach(doc => allRequests.push(doc.data()));
+
+    // (ថ្មី) បែងចែកទិន្នន័យជា ២ ក្រុម
+    const outNowRequests = allRequests.filter(r => r.returnStatus !== 'បានចូលមកវិញ');
+    const returnedRequests = allRequests.filter(r => r.returnStatus === 'បានចូលមកវិញ');
+
+    // (ថ្មី) បង្ហាញទិន្នន័យ ក្រុមទី១ (កំពុងនៅក្រៅ)
+    renderHistoryList(outNowRequests, outNowList, outNowPlaceholder);
+    
+    // (ថ្មី) បង្ហាញទិន្នន័យ ក្រុមទី២ (បានចូលមកវិញ)
+    renderHistoryList(returnedRequests, returnedList, returnedPlaceholder);
+    
+    // (ថ្មី) ធ្វើបច្ចុប្បន្នភាពចំនួន Count នៅលើ Tabs
+    tabOutNow.innerHTML = `🚶 កំពុងនៅក្រៅ (${outNowRequests.length})`;
+    tabReturned.innerHTML = `✔️ បានចូលមកវិញ (${returnedRequests.length})`;
+}
+
+
+// --- (កែសម្រួល) មុខងារ​បង្ហាញ Card ក្នុង​បញ្ជី ---
+// Function នេះឥឡូវទទួលយក Array ជំនួសឲ្យ Snapshot
+function renderHistoryList(requests, container, placeholder) {
     if (!container || !placeholder) return;
     
-    if (snapshot.empty) {
+    if (requests.length === 0) {
         placeholder.classList.remove('hidden');
         container.innerHTML = '';
     } else {
         placeholder.classList.add('hidden');
         container.innerHTML = '';
         
-        const requests = [];
-        snapshot.forEach(doc => requests.push(doc.data()));
-
         // រៀបចំតាមថ្ងៃស្នើសុំ (ថ្មីមុន)
         requests.sort((a, b) => {
             const timeA = a.requestedAt?.toMillis() ?? 0;
@@ -203,16 +257,15 @@ function renderHistoryList(snapshot, container, placeholder) {
         });
 
         requests.forEach(request => {
-            container.innerHTML += renderAdminCard(request); // មិនចាំបាច់បញ្ជូន type ទេ
+            container.innerHTML += renderAdminCard(request);
         });
     }
 }
 
-// --- មុខងារ​បង្កើត HTML សម្រាប់ Card នីមួយៗ ---
+// --- មុខងារ​បង្កើត HTML សម្រាប់ Card នីមួយៗ (ដូចដើម) ---
 function renderAdminCard(request) {
     if (!request || !request.requestId) return '';
 
-    // សម្រាប់ច្បាប់ចេញក្រៅ startDate និង endDate គឺដូចគ្នា
     const dateString = request.startDate || 'N/A'; 
     
     const decisionTimeText = formatFirestoreTimestamp(request.decisionAt, 'HH:mm dd/MM/yyyy');
@@ -227,14 +280,13 @@ function renderAdminCard(request) {
             </div>
         `;
     } else {
-        // បើមិនទាន់ចូលមកវិញ អាចបង្ហាញថា "កំពុងនៅក្រៅ" ឬ មិនបង្ហាញអ្វីសោះ
+        // បើមិនទាន់ចូលមកវិញ
         returnInfo = `
              <div class="mt-3 pt-3 border-t border-dashed border-gray-200">
-                <p class="text-sm font-medium text-orange-600">🚶 កំពុងនៅក្រៅ</p>
-            </div>
+                 <p class="text-sm font-medium text-orange-600">🚶 កំពុងនៅក្រៅ</p>
+             </div>
         `;
     }
-
 
     return `
         <div class="bg-white border border-gray-200 rounded-lg shadow-sm p-4 mb-4">
@@ -264,9 +316,8 @@ function renderAdminCard(request) {
     `;
 }
 
-// --- មុខងារ​សម្រាប់ Filter Modal ---
+// --- មុខងារ​សម្រាប់ Filter Modal (ដូចដើម) ---
 function openFilterModal() {
-    // កំណត់​តម្លៃ​ក្នុង Modal ឲ្យ​ត្រូវ​នឹង Filter បច្ចុប្បន្ន
     filterMonth.value = currentFilterMonth;
     filterYear.value = currentFilterYear;
     filterModal.classList.remove('hidden');
@@ -277,13 +328,11 @@ function closeFilterModal() {
 }
 
 function applyFilter() {
-    // យក​តម្លៃ​ថ្មី​ពី Modal
     currentFilterMonth = parseInt(filterMonth.value);
     currentFilterYear = parseInt(filterYear.value);
     
-    // បិទ Modal
     closeFilterModal();
     
-    // ហៅ​ទិន្នន័យ​ថ្មី​ដោយ​ផ្អែក​លើ Filter
+    // ហៅ​ទិន្នន័យ​ថ្មី (Function នេះនឹងបែងចែកទិន្នន័យទៅ Tab ទាំងពីរដោយស្វ័យប្រវត្តិ)
     fetchFilteredData();
 }
